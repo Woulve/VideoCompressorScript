@@ -47,13 +47,14 @@ def compress_image(input_path, output_path):
         else:
             resized_img.save(output_path, quality=imageQuality)
 
+        input_stat = os.stat(input_path)
+        os.utime(output_path, (input_stat.st_atime, input_stat.st_mtime))
+
         if os.path.exists(output_path):
             saved_space = (initial_size - get_file_size(output_path))
             return saved_space
         else:
             return 0
-
-
 
 def compress_video(input_path, output_path):
     if not overwriteFiles and os.path.exists(output_path):
@@ -78,6 +79,9 @@ def compress_video(input_path, output_path):
     subprocess.run(ffmpeg_command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     if os.path.exists(output_path):
+        input_stat = os.stat(input_path)
+        os.utime(output_path, (input_stat.st_atime, input_stat.st_mtime))
+
         initial_size = get_file_size(input_path)
         saved_space = (initial_size - get_file_size(output_path))
         return saved_space
@@ -101,36 +105,48 @@ def process_files_in_directory(input_folder):
         os.makedirs(output_folder_images)
 
     for filename in tqdm(os.listdir(input_folder), desc="Converting files"):
-        input_path = os.path.join(input_folder, filename)
+        try:
+            input_path = os.path.join(input_folder, filename)
 
-        if os.path.isfile(input_path):
-            if filename.endswith('.mp4'):
-                output_path = os.path.join(output_folder_videos, filename)
-                saved_space_video = compress_video(input_path, output_path)
-                if saved_space_video == None:
-                    print (f"Skipping {filename}")
-                    skipped_files += 1
-                    continue
-                if saved_space_video == 0:
-                    print(f"Failed to convert {filename}")
-                    return
+            if os.path.isfile(input_path):
+                if filename.endswith('.mp4'):
+                    output_path = os.path.join(output_folder_videos, filename)
+                    saved_space_video = compress_video(input_path, output_path)
+                    if saved_space_video == None:
+                        print (f"Skipping {filename}")
+                        skipped_files += 1
+                        continue
+                    if saved_space_video == 0:
+                        print(f"Failed to convert {filename}")
+                        return
 
-                total_saved_space_videos += saved_space_video
-                converted_video_files += 1
-            
-            elif filename.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp')):
-                output_path = os.path.join(output_folder_images, filename)
-                saved_space_image = compress_image(input_path, output_path)
-                if saved_space_image == None:
-                    print (f"Skipping {filename}")
-                    skipped_files += 1
-                    continue
-                if saved_space_image == 0:
-                    print(f"Failed to convert {filename}")
-                    return
+                    total_saved_space_videos += saved_space_video
+                    converted_video_files += 1
+                
+                elif filename.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp')):
+                    output_path = os.path.join(output_folder_images, filename)
+                    saved_space_image = compress_image(input_path, output_path)
+                    if saved_space_image == None:
+                        print (f"Skipping {filename}")
+                        skipped_files += 1
+                        continue
+                    if saved_space_image == 0:
+                        print(f"Failed to convert {filename}")
+                        return
 
-                total_saved_space_images += saved_space_image
-                converted_image_files += 1
+                    total_saved_space_images += saved_space_image
+                    converted_image_files += 1
+        except (KeyboardInterrupt, SystemExit):  # Handling exit cases
+            if os.path.exists(output_path):
+                print(f"Removing {output_path}")
+                os.remove(output_path)
+            raise
+
+        except Exception as e:  # Catching other exceptions
+            print(f"Error during compression: {e}")
+            if os.path.exists(output_path):
+                os.remove(output_path)
+            return 0
 
     print(f"Converted {converted_video_files} video files. Saved {total_saved_space_videos / 1e6:.2f} MB.")
     print(f"Converted {converted_image_files} image files. Saved {total_saved_space_images / 1e6:.2f} MB.")
